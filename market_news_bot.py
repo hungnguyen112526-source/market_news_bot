@@ -1,22 +1,25 @@
 """
-Bot AI gửi tin tức thị trường qua Telegram (bản GitHub Actions)
-=================================================================
+Bot AI gửi tin tức thị trường qua Telegram (dùng Gemini API - miễn phí)
+=========================================================================
 Luồng hoạt động:
 1. Lấy tin mới nhất từ (các) RSS feed tài chính/kinh doanh
 2. Lọc ra những tin CHƯA từng gửi (dựa vào file sent_links.json)
-3. Nếu có tin mới -> gửi cho Claude tóm tắt -> gửi qua Telegram
-4. Nếu không có tin mới -> không làm gì (tiết kiệm API call)
+3. Nếu có tin mới -> gửi cho Gemini tóm tắt -> gửi qua Telegram
+4. Nếu không có tin mới -> không làm gì (tiết kiệm quota API)
 5. Cập nhật lại sent_links.json để lần chạy sau không gửi trùng
 
-File này được thiết kế để GitHub Actions gọi lặp lại mỗi vài phút.
-Workflow sẽ tự commit lại sent_links.json sau mỗi lần chạy.
+LƯU Ý VỀ MODEL GEMINI:
+Model "gemini-2.5-flash" dùng trong file này thuộc gói FREE TIER của Google,
+nhưng theo lịch công bố, Google sẽ ngừng hỗ trợ dòng Gemini 2.5 vào 16/10/2026.
+Sau mốc đó, đổi biến GEMINI_MODEL bên dưới sang model mới hơn (kiểm tra tại
+https://ai.google.dev/gemini-api/docs/models để biết model free tier hiện hành).
 """
 
 import os
 import json
 import feedparser
 import requests
-from anthropic import Anthropic
+from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()  # đọc biến môi trường từ .env khi chạy ở máy cá nhân
@@ -25,7 +28,10 @@ load_dotenv()  # đọc biến môi trường từ .env khi chạy ở máy cá 
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+
+# Đổi model tại đây nếu Google ngừng hỗ trợ gemini-2.5-flash sau 16/10/2026
+GEMINI_MODEL = "gemini-2.5-flash"
 
 RSS_FEEDS = [
     "https://cafef.vn/thi-truong-chung-khoan.rss",
@@ -36,7 +42,7 @@ MAX_ARTICLES_PER_FEED = 10       # số bài mới nhất lấy từ mỗi ngu�
 SENT_LINKS_FILE = "sent_links.json"
 MAX_SENT_LINKS_KEPT = 300        # chỉ giữ lại N link gần nhất để file không phình to mãi
 
-client = Anthropic(api_key=ANTHROPIC_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ---------- BƯỚC 1: LẤY TIN TỪ RSS ----------
@@ -84,7 +90,7 @@ def filter_new_articles(articles, sent_links_set):
 # ---------- BƯỚC 3: DÙNG AI TÓM TẮT / PHÂN TÍCH ----------
 
 def summarize_with_ai(articles):
-    """Gửi danh sách bài viết MỚI cho Claude để tóm tắt thành bản tin ngắn gọn."""
+    """Gửi danh sách bài viết MỚI cho Gemini để tóm tắt thành bản tin ngắn gọn."""
     raw_text = "\n\n".join(
         f"Nguồn: {a['source']}\nTiêu đề: {a['title']}\nMô tả: {a['summary']}\nLink: {a['link']}"
         for a in articles
@@ -100,12 +106,11 @@ Hãy viết một bản tin ngắn gọn bằng tiếng Việt cho nhà đầu t
 3. Định dạng Markdown đơn giản (in đậm bằng *, không dùng bảng)
 Giữ bản tin ngắn gọn, súc tích."""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=800,
-        messages=[{"role": "user", "content": prompt}],
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
     )
-    return response.content[0].text
+    return response.text
 
 
 # ---------- BƯỚC 4: GỬI QUA TELEGRAM ----------
@@ -137,7 +142,7 @@ def main():
         print("Không có tin mới. Không gửi gì cả.")
         return
 
-    print(f"Phát hiện {len(new_articles)} tin mới. Đang tóm tắt bằng AI...")
+    print(f"Phát hiện {len(new_articles)} tin mới. Đang tóm tắt bằng Gemini...")
     summary = summarize_with_ai(new_articles)
 
     print("Đang gửi bản tin qua Telegram...")
