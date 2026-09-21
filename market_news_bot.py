@@ -9,17 +9,23 @@ Luồng hoạt động:
 5. Cập nhật lại sent_links.json để lần chạy sau không gửi trùng
 
 LƯU Ý VỀ MODEL GEMINI:
-Model "gemini-2.5-flash" dùng trong file này thuộc gói FREE TIER của Google,
-nhưng theo lịch công bố, Google sẽ ngừng hỗ trợ dòng Gemini 2.5 vào 16/10/2026.
-Sau mốc đó, đổi biến GEMINI_MODEL bên dưới sang model mới hơn (kiểm tra tại
-https://ai.google.dev/gemini-api/docs/models để biết model free tier hiện hành).
+Model đang dùng là "gemini-3.6-flash" (xem biến GEMINI_MODEL bên dưới). Google
+thường xuyên thay đổi model được cấp miễn phí, nên nếu gặp lỗi "model not found"
+trong log GitHub Actions, vào https://ai.google.dev/gemini-api/docs/models để
+kiểm tra model free tier hiện hành và cập nhật lại biến GEMINI_MODEL.
+
+LƯU Ý VỀ LỖI 503 (quá tải):
+Nếu Gemini báo lỗi 503 "currently experiencing high demand", code sẽ tự động
+thử lại tối đa 3 lần (đợi tăng dần 10s, 20s, 40s) trước khi báo lỗi thật sự.
 """
 
 import os
 import json
+import time
 import feedparser
 import requests
 from google import genai
+from google.genai import errors as genai_errors
 from dotenv import load_dotenv
 
 load_dotenv()  # đọc biến môi trường từ .env khi chạy ở máy cá nhân
@@ -43,6 +49,9 @@ RSS_FEEDS = [
 MAX_ARTICLES_PER_FEED = 10       # số bài mới nhất lấy từ mỗi nguồn mỗi lần quét
 SENT_LINKS_FILE = "sent_links.json"
 MAX_SENT_LINKS_KEPT = 300        # chỉ giữ lại N link gần nhất để file không phình to mãi
+
+MAX_RETRIES = 3                  # số lần thử lại tối đa khi Gemini bị quá tải (503)
+RETRY_BASE_DELAY_SECONDS = 10    # thời gian đợi trước lần thử lại đầu tiên (tăng dần gấp đôi)
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -108,11 +117,27 @@ Hãy viết một bản tin ngắn gọn bằng tiếng Việt cho nhà đầu t
 3. Định dạng Markdown đơn giản (in đậm bằng *, không dùng bảng)
 Giữ bản tin ngắn gọn, súc tích."""
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
+    response = call_gemini_with_retry(prompt)
     return response.text
+
+
+def call_gemini_with_retry(prompt):
+    """Gọi Gemini, tự động thử lại (backoff tăng dần) nếu server báo quá tải (503)."""
+    delay = RETRY_BASE_DELAY_SECONDS
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+        except genai_errors.ServerError as e:
+            is_last_attempt = attempt == MAX_RETRIES
+            print(f"Gemini đang quá tải (lần thử {attempt}/{MAX_RETRIES}): {e}")
+            if is_last_attempt:
+                raise
+            print(f"Đợi {delay}s rồi thử lại...")
+            time.sleep(delay)
+            delay *= 2  # tăng gấp đôi thời gian đợi mỗi lần thử lại
 
 
 # ---------- BƯỚC 4: GỬI QUA TELEGRAM ----------
