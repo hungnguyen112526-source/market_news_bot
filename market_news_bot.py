@@ -30,8 +30,10 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
-# Đổi model tại đây nếu Google ngừng hỗ trợ gemini-2.5-flash sau 16/10/2026
-GEMINI_MODEL = "gemini-2.5-flash"
+# gemini-2.5-flash đã bị Google ngừng cấp cho user mới (10/2026), đổi sang gemini-3.6-flash.
+# Nếu sau này lại đổi tiếp, xem model free tier hiện hành tại:
+# https://ai.google.dev/gemini-api/docs/models
+GEMINI_MODEL = "gemini-3.6-flash"
 
 RSS_FEEDS = [
     "https://cafef.vn/thi-truong-chung-khoan.rss",
