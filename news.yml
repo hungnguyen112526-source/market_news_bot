@@ -1,0 +1,40 @@
+name: Market News Bot
+
+on:
+  schedule:
+    # Chạy vào phút 0 và 10, 20, 30, 40, 50 của mỗi giờ (giờ UTC)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:   # cho phép bấm "Run workflow" thủ công để test
+
+permissions:
+  contents: write   # cần quyền này để workflow tự commit sent_links.json
+
+jobs:
+  send-news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cài thư viện
+        run: pip install -r requirements.txt
+
+      - name: Chạy bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python market_news_bot.py
+
+      - name: Commit lại sent_links.json nếu có thay đổi
+        run: |
+          git config user.name "market-news-bot"
+          git config user.email "actions@github.com"
+          git add sent_links.json
+          git diff --cached --quiet || git commit -m "Cập nhật danh sách tin đã gửi [skip ci]"
+          git push
