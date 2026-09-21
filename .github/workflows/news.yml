@@ -3,7 +3,7 @@ name: Market News Bot
 on:
   schedule:
     # Chạy vào phút 0 và 10, 20, 30, 40, 50 của mỗi giờ (giờ UTC)
-    - cron: '*/10 * * * *'
+    - cron: '*/50 * * * *'
   workflow_dispatch:   # cho phép bấm "Run workflow" thủ công để test
 
 permissions:
