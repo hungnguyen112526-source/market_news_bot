@@ -114,8 +114,8 @@ def summarize_with_ai(articles):
 Hãy viết một bản tin ngắn gọn bằng tiếng Việt cho nhà đầu tư cá nhân, gồm:
 1. Điểm qua từng tin quan trọng (1-2 câu mỗi tin)
 2. Nhận định ngắn về tác động tới thị trường (nếu có đủ thông tin)
-3. Định dạng Markdown đơn giản (in đậm bằng *, không dùng bảng)
-Giữ bản tin ngắn gọn, súc tích."""
+Viết dạng văn bản thường, KHÔNG dùng ký tự in đậm/in nghiêng (*, _, [, ]) hay Markdown,
+chỉ dùng dấu gạch đầu dòng (-) hoặc số thứ tự để liệt kê. Giữ bản tin ngắn gọn, súc tích."""
 
     response = call_gemini_with_retry(prompt)
     return response.text
@@ -142,16 +142,28 @@ def call_gemini_with_retry(prompt):
 
 # ---------- BƯỚC 4: GỬI QUA TELEGRAM ----------
 
-def send_telegram_message(text):
-    """Gửi tin nhắn tới Telegram bằng Bot API."""
+def send_telegram_message(text, parse_mode="Markdown"):
+    """Gửi tin nhắn tới Telegram bằng Bot API.
+
+    Nếu gửi kèm parse_mode="Markdown" bị Telegram từ chối (400 - do nội dung
+    AI sinh ra chứa ký tự đặc biệt không khớp cặp đúng chuẩn Markdown), tự động
+    gửi lại dưới dạng văn bản thường để không bao giờ bị mất tin.
+    """
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
-        "parse_mode": "Markdown",
         "disable_web_page_preview": True,
     }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+
     resp = requests.post(url, json=payload, timeout=15)
+
+    if resp.status_code == 400 and parse_mode:
+        print(f"Gửi kèm parse_mode='{parse_mode}' bị lỗi ({resp.text}). Gửi lại dạng văn bản thường...")
+        return send_telegram_message(text, parse_mode=None)
+
     resp.raise_for_status()
     return resp.json()
 
@@ -173,7 +185,7 @@ def main():
     summary = summarize_with_ai(new_articles)
 
     print("Đang gửi bản tin qua Telegram...")
-    send_telegram_message(f"📈 *Bản tin thị trường*\n\n{summary}")
+    send_telegram_message(f"📈 Bản tin thị trường\n\n{summary}")
 
     # Cập nhật danh sách link đã gửi
     sent_links.update(a["link"] for a in new_articles)
